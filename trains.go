@@ -47,7 +47,6 @@ func getRailTrainsApi() []Train {
 		railTrainList[i].No = strings.Split(station, " - ")[0]
 		railTrainList[i].Name = strings.Split(station, " - ")[1]
 	}
-	fmt.Print(railTrainList)
 	return railTrainList
 }
 
@@ -74,12 +73,95 @@ func getRailTrainsDb(db *sql.DB) []Train {
 	return trainsDb
 }
 
+func (trainDb Train) updateRailTrainDb(db *sql.DB, trainApi Train) {
+	table := os.Getenv("TABLE")
+	if trainApi.No == trainDb.No && trainApi.Name == trainDb.Name {
+		// DO NOTHING
+	} else if trainApi.No == trainDb.No && trainApi.Name != trainDb.Name {
+		stmt, err := db.Prepare(
+			fmt.Sprintf("UPDATE %s SET %s = $1 WHERE %s = $2",
+				table, "train_name", "train_no"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer stmt.Close()
+		_, err = stmt.Exec(trainApi.Name, trainDb.No)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("---UPDATE SUCCESS [%s - %s]---", trainApi.Name, trainApi.No)
+	}
+}
+
 func railTrains(db *sql.DB) {
 	log.Println("START -> GET ALL rail trains API functionality <- START")
-	getRailTrainsApi()
+	trainsApi := getRailTrainsApi()
 	log.Println("END -> GET ALL rail trains API functionality <- END")
 
 	log.Println("START -> GET ALL rail trains DB functionality <- START")
-	getRailTrainsDb(db)
+	trainsDb := getRailTrainsDb(db)
 	log.Println("END -> GET ALL rail trains DB functionality <- END")
+
+	/*
+		Iterate through each train to check for any changes in train name.
+		1. If unchanged, do nothing
+		2. If changed [train name], update train name w.r.t to train no
+	*/
+	if len(trainsApi) == len(trainsDb) {
+		for _, sapi := range trainsApi {
+			for _, sdb := range trainsDb {
+				sdb.updateRailTrainDb(db, sapi)
+			}
+		}
+	} else if len(trainsApi) < len(trainsDb) {
+		/*
+			Send mail to admin user(s)
+		*/
+		trains := []string{}
+		for _, tdb := range trainsDb {
+			checkTrain := true
+			for _, tapi := range trainsApi {
+				tdb.updateRailTrainDb(db, tapi)
+				if tapi.No == tdb.No {
+					checkTrain = false
+					break
+				}
+			}
+			if checkTrain {
+				trains = append(trains, fmt.Sprintf("%s - %s", tdb.No, tdb.Name))
+			}
+		}
+		log.Print("<---Rail Trains in DB--->")
+		for i, train := range trains {
+			log.Printf("%d. %s", i+1, train)
+		}
+	} else if len(trainsApi) > len(trainsDb) {
+		table := os.Getenv("TABLE")
+		log.Print("<---Rail Trains in API--->")
+		for i, tapi := range trainsApi {
+			checkTrain := true
+			for _, tdb := range trainsDb {
+				tdb.updateRailTrainDb(db, tapi)
+				if tapi.No == tdb.No {
+					checkTrain = false
+					break
+				}
+			}
+			if checkTrain {
+				stmt, err := db.Prepare(
+					fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)",
+						table, "train_no", "train_name"))
+				if err != nil {
+					log.Fatal(err)
+				}
+				defer stmt.Close()
+				_, err = stmt.Exec(tapi.No, tapi.Name)
+				if err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("%d. INSERT SUCCESS [%s - %s]", i+1, tapi.Name, tapi.No)
+			}
+		}
+	}
+
 }
