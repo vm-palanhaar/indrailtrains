@@ -8,3 +8,5 @@ CRON job for updates in Trains table
 - PSQL_DB_PWD
 - PSQL_DB_HOST
 - PSQL_DB_PORT
+- TABLE_INDRAIL_TRAINS
+- ENV = DEV/TEST/STG/PROD
